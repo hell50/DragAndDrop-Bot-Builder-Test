@@ -146,22 +146,51 @@ function addNode(type, x, y, idArg) {
   header.textContent = type;
   el.appendChild(header);
 
-  // Ports
-  const hasIn = NODE_TYPES[type].inputs && NODE_TYPES[type].inputs.length;
-  const hasOut = NODE_TYPES[type].outputs && NODE_TYPES[type].outputs.length;
-  if (hasIn) {
+  // Editable title below header
+  const title = document.createElement('div');
+  title.className = 'nodetitle';
+  title.contentEditable = true;
+  title.spellcheck = false;
+  title.textContent = type;
+  title.addEventListener('blur', ()=>{
+    nodes[id].label = title.textContent.trim() || type;
+  });
+  el.appendChild(title);
+
+  // Ports (multiple)
+  const nt = NODE_TYPES[type];
+  const inCount = (nt.inputs || []).length;
+  const outCount = (nt.outputs || []).length;
+  // create input ports
+  for (let i=0;i<inCount;i++){
+    const pname = nt.inputs[i] || `in${i+1}`;
     const pin = document.createElement('div');
     pin.className = 'port in';
     pin.dataset.id = id;
-    pin.onclick = (e) => onPortClick(e, 'in');
+    pin.dataset.portIndex = i;
+    pin.title = pname;
+    pin.addEventListener('click', (e)=> onPortClick(e, 'in'));
     el.appendChild(pin);
+    // port label (left)
+    const pl = document.createElement('div');
+    pl.className = 'port-label';
+    pl.textContent = pname;
+    el.appendChild(pl);
   }
-  if (hasOut) {
+  // create output ports
+  for (let i=0;i<outCount;i++){
+    const pname = nt.outputs[i] || `out${i+1}`;
     const pout = document.createElement('div');
     pout.className = 'port out';
     pout.dataset.id = id;
-    pout.onclick = (e) => onPortClick(e, 'out');
+    pout.dataset.portIndex = i;
+    pout.title = pname;
+    pout.addEventListener('click', (e)=> onPortClick(e, 'out'));
     el.appendChild(pout);
+    const pl = document.createElement('div');
+    pl.className = 'port-label';
+    pl.textContent = pname;
+    el.appendChild(pl);
   }
 
   // Dragging
@@ -172,9 +201,36 @@ function addNode(type, x, y, idArg) {
   // Append to stage (not canvas) so transform/scrolling works
   stage.appendChild(el);
 
-  nodes[id] = {id, type, x, y, props: {}, el};
+  // Position ports and labels evenly along the node height
+  const h = el.clientHeight || 60;
+  // inputs
+  const inPorts = el.querySelectorAll('.port.in');
+  for (let i=0;i<inPorts.length;i++){
+    const pin = inPorts[i];
+    const top = Math.round(( (i+1) / (inPorts.length+1) ) * h);
+    pin.style.top = top + 'px';
+    // label next sibling (we appended a label after each port)
+    const label = pin.nextSibling;
+    if (label && label.classList && label.classList.contains('port-label')){
+      label.style.left = '-72px';
+      label.style.top = (top-8) + 'px';
+    }
+  }
+  // outputs
+  const outPorts = el.querySelectorAll('.port.out');
+  for (let i=0;i<outPorts.length;i++){
+    const pout = outPorts[i];
+    const top = Math.round(( (i+1) / (outPorts.length+1) ) * h);
+    pout.style.top = top + 'px';
+    const label = pout.nextSibling;
+    if (label && label.classList && label.classList.contains('port-label')){
+      label.style.right = '-72px';
+      label.style.top = (top-8) + 'px';
+    }
+  }
+
+  nodes[id] = {id, type, x, y, label: type, props: {}, el, ports:{in: (nt.inputs||[]).length, out: (nt.outputs||[]).length}};
   // defaults
-  const nt = NODE_TYPES[type];
   if (nt.props) {
     nt.props.forEach(p => nodes[id].props[p.key] = p.default);
   }
@@ -203,7 +259,7 @@ function onMouseMove(e) {
     redrawWires();
   }
   if (wireStart) {
-    const p = getPortCenter(wireStart, 'out');
+    const p = getPortCenter(wireStart.id, 'out', wireStart.port);
     if (!p) return;
     const pt = getStageCoords(e.clientX, e.clientY);
     drawTempLine(p.x, p.y, pt.x, pt.y);
@@ -216,8 +272,11 @@ function onMouseUp(e) {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     if (target && target.classList.contains('port') && target.classList.contains('in')) {
       const endId = target.dataset.id;
-      if (endId && endId !== wireStart && !connections.find(c=>c[0]===wireStart && c[1]===endId)) {
-        connections.push([wireStart, endId]);
+      const endPort = parseInt(target.dataset.portIndex || 0);
+      const startId = wireStart.id;
+      const startPort = wireStart.port;
+      if (endId && (endId !== startId || endPort !== startPort) && !connections.find(c=>c[0]===startId && c[1]===startPort && c[2]===endId && c[3]===endPort)) {
+        connections.push([startId, startPort, endId, endPort]);
       }
     }
     wireStart = null;
@@ -234,8 +293,12 @@ function onNodeClick(e, id) {
 function onPortClick(e, dir) {
   e.stopPropagation();
   const id = e.target.dataset.id;
+  const pindex = parseInt(e.target.dataset.portIndex || 0);
   if (dir === 'out') {
-    wireStart = id;
+    wireStart = {id, port: pindex};
+  } else {
+    // clicking input to start reverse wiring (optional)
+    // allow clicking input to remove connections
   }
 }
 
@@ -261,6 +324,19 @@ function showProperties(id) {
   title.textContent = node.type;
   propsEl.appendChild(title);
 
+  // editable label
+  const lblLabel = document.createElement('div');
+  lblLabel.textContent = 'Label';
+  propsEl.appendChild(lblLabel);
+  const lblInput = document.createElement('input');
+  lblInput.value = node.label || node.type;
+  lblInput.oninput = ()=>{
+    node.label = lblInput.value;
+    const titleEl = node.el.querySelector('.nodetitle');
+    if (titleEl) titleEl.textContent = node.label;
+  };
+  propsEl.appendChild(lblInput);
+
   const nt = NODE_TYPES[node.type];
   if (nt.props) {
     nt.props.forEach(p => {
@@ -284,7 +360,7 @@ function onKeyDown(e) {
 function deleteNode(id) {
   if (!nodes[id]) return;
   // remove connections
-  connections = connections.filter(c=>c[0]!==id && c[1]!==id);
+  connections = connections.filter(c=>c[0]!==id && c[2]!==id);
   // remove element
   nodes[id].el.remove();
   delete nodes[id];
@@ -296,8 +372,8 @@ function deleteNode(id) {
 function redrawWires() {
   while (svg.firstChild) svg.removeChild(svg.firstChild);
   connections.forEach(c => {
-    const s = getPortCenter(c[0], 'out');
-    const e = getPortCenter(c[1], 'in');
+    const s = getPortCenter(c[0], 'out', c[1]);
+    const e = getPortCenter(c[2], 'in', c[3]);
     if (!s || !e) return;
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
     const dx = Math.abs(e.x - s.x);
@@ -312,19 +388,27 @@ function redrawWires() {
   });
 }
 
-function getPortCenter(nodeId, dir) {
+function getPortCenter(nodeId, dir, portIndex=0) {
   const n = nodes[nodeId];
   if (!n) return null;
   const el = n.el;
   const rect = el.getBoundingClientRect();
   const stageRect = stage.getBoundingClientRect();
-  // rect coordinates are in viewport space; convert to stage coordinates (unscaled)
-  const x = (rect.left - stageRect.left + canvas.scrollLeft)/scale;
-  const y = (rect.top - stageRect.top + canvas.scrollTop)/scale;
+  // convert to stage coordinates (unscaled)
+  const x0 = (rect.left - stageRect.left + canvas.scrollLeft)/scale;
+  const y0 = (rect.top - stageRect.top + canvas.scrollTop)/scale;
+  const w = rect.width;
+  const h = rect.height;
+  // compute y position based on port index and total ports on that side
   if (dir === 'out') {
-    return {x: x + rect.width - 6, y: y + 24};
+    const total = (n.ports && n.ports.out) || 1;
+    const py = y0 + h*( (portIndex+1) / (total+1) );
+    return {x: x0 + w + 6, y: py};
+  } else {
+    const total = (n.ports && n.ports.in) || 1;
+    const py = y0 + h*( (portIndex+1) / (total+1) );
+    return {x: x0 - 6, y: py};
   }
-  return {x: x + 6, y: y + 24};
 }
 
 function getStageCoords(clientX, clientY) {
@@ -354,7 +438,7 @@ function drawTempLine(x1, y1, x2, y2) {
 function saveLayout() {
   const payload = { nodes: [], connections };
   Object.values(nodes).forEach(n => {
-    payload.nodes.push({ id: n.id, type: n.type, x: Math.round(n.x), y: Math.round(n.y), props: n.props });
+    payload.nodes.push({ id: n.id, type: n.type, x: Math.round(n.x), y: Math.round(n.y), props: n.props, label: n.label, ports: n.ports });
   });
   localStorage.setItem('botbuilder_layout', JSON.stringify(payload));
   alert('Layout saved to localStorage');
@@ -374,7 +458,15 @@ function loadLayout() {
     (payload.nodes||[]).forEach(n => {
       addNode(n.type, n.x, n.y, n.id);
       const created = nodes[n.id];
-      if (created) created.props = n.props || {};
+      if (created) {
+        created.props = n.props || {};
+        if (n.label) {
+          created.label = n.label;
+          const titleEl = created.el.querySelector('.nodetitle');
+          if (titleEl) titleEl.textContent = created.label;
+        }
+        if (n.ports) created.ports = n.ports;
+      }
     });
     redrawWires();
     alert('Layout loaded');
@@ -411,8 +503,8 @@ function exportCode() {
     "bot = commands.Bot(command_prefix='!', intents=intents)",
     ""
   ];
-  const rootNodes = Object.values(nodes).filter(n => NODE_TYPES[n.type].type === 'event');
-  rootNodes.forEach(root => {
+    const rootNodes = Object.values(nodes).filter(n => NODE_TYPES[n.type].type === 'event');
+    rootNodes.forEach(root => {
     const funcName = 'cmd_' + root.id.replace('node_','');
     const props = {...root.props, func_name: funcName};
     lines.push(NODE_TYPES[root.type].code_start.replace('{func_name}', props.func_name).replace('{trigger}', props.trigger || ''));
@@ -422,7 +514,7 @@ function exportCode() {
     while (true) {
       const conn = connections.find(c => c[0] === curr);
       if (!conn) break;
-      const target = conn[1];
+      const target = conn[2];
       if (visited.has(target)) break;
       visited.add(target);
       const node = nodes[target];
