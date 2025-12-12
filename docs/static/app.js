@@ -6,12 +6,26 @@ const NODE_TYPES = {
     "outputs": ["Flow"],
     "props": []
   },
+  "If Condition": {
+    "type": "control",
+    "code": "    if {condition}:",
+    "inputs": ["Flow"],
+    "outputs": ["True", "False"],
+    "props": [{label: "Condition", key: "condition", default: "True", type: "text", required: true}]
+  },
   "Command": {
     "type": "event",
     "code_start": "@bot.command(name='{trigger}')\nasync def {func_name}(ctx):",
     "inputs": [],
     "outputs": ["Flow"],
-    "props": [{label: "Trigger (!name)", key: "trigger", default: "hello"}]
+    "props": [{label: "Trigger (!name)", key: "trigger", default: "!hello", required: true}]
+  },
+  "Set Variable": {
+    "type": "action",
+    "code": "    {var} = {value}",
+    "inputs": ["Flow"],
+    "outputs": ["Flow"],
+    "props": [{label: "Variable Name", key: "var", default: "x", required: true}, {label: "Value", key: "value", default: "0"}]
   },
   "Send Message": {
     "type": "action",
@@ -20,12 +34,26 @@ const NODE_TYPES = {
     "outputs": ["Flow"],
     "props": [{label: "Message Text", key: "text", default: "Hello World!"}]
   },
+  "Send Embed": {
+    "type": "action",
+    "code": "    await ctx.send(embed={embed})",
+    "inputs": ["Flow"],
+    "outputs": ["Flow"],
+    "props": [{label: "Embed JSON", key: "embed", default: "{}", type: "textarea"}]
+  },
   "Reply to User": {
     "type": "action",
     "code": "    await ctx.reply('{text}')",
     "inputs": ["Flow"],
     "outputs": ["Flow"],
     "props": [{label: "Reply Text", key: "text", default: "I hear you!"}]
+  },
+  "HTTP Request": {
+    "type": "action",
+    "code": "    # HTTP request: {method} {url}",
+    "inputs": ["Flow"],
+    "outputs": ["Flow"],
+    "props": [{label: "Method", key: "method", default: "GET"}, {label: "URL", key: "url", default: "https://api.example.com"}]
   },
   "Print Console": {
     "type": "action",
@@ -48,13 +76,17 @@ let offset = {x:0, y:0};
 let wireStart = null;
 let tempLine = null;
 let scale = 1;
+let history = [];
+let future = [];
+let exportButton = null;
 
 function init() {
   canvas = document.getElementById('canvas');
   stage = document.getElementById('stage');
   svg = document.getElementById('wires');
   const toolbar = document.getElementById('toolbar');
-  const exportBtn = document.getElementById('export');
+  exportButton = document.getElementById('export');
+  const exportBtn = exportButton;
 
   // Create toolbar buttons (draggable)
   Object.keys(NODE_TYPES).forEach(type => {
@@ -78,12 +110,30 @@ function init() {
   saveBtn.onclick = saveLayout; toolbar.appendChild(saveBtn);
   const loadBtn = document.createElement('button'); loadBtn.textContent = 'Load';
   loadBtn.onclick = loadLayout; toolbar.appendChild(loadBtn);
+  const undoBtn = document.createElement('button'); undoBtn.textContent = 'Undo'; undoBtn.onclick = undo; toolbar.appendChild(undoBtn);
+  const redoBtn = document.createElement('button'); redoBtn.textContent = 'Redo'; redoBtn.onclick = redo; toolbar.appendChild(redoBtn);
   const clearBtn = document.createElement('button'); clearBtn.textContent = 'Clear';
   clearBtn.onclick = ()=>{ nodes={}; connections=[]; nodeCounter=0; stage.querySelectorAll('.node').forEach(n=>n.remove()); redrawWires(); document.getElementById('props').textContent='Select a node'; };
   toolbar.appendChild(clearBtn);
 
   exportBtn.addEventListener('click', onExport);
 
+  // initial history snapshot
+  pushHistory();
+  // initial validation state
+  validateAllGlobal();
+
+
+function validateAllGlobal(){
+  let ok = true;
+  Object.values(nodes).forEach(n=>{
+    const nt = NODE_TYPES[n.type];
+    if (!nt || !nt.props) return;
+    nt.props.forEach(p=>{ const v = n.props[p.key] || ''; const r = validatePropLocal(p,v); if (!r.ok) ok = false; });
+  });
+  if (exportButton) exportButton.disabled = !ok;
+  return ok;
+}
   // Bind events
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
@@ -235,6 +285,7 @@ function addNode(type, x, y, idArg) {
     nt.props.forEach(p => nodes[id].props[p.key] = p.default);
   }
   redrawWires();
+  pushHistory();
 }
 
 function onNodeMouseDown(e, id) {
@@ -282,6 +333,7 @@ function onMouseUp(e) {
     wireStart = null;
     clearTempLine();
     redrawWires();
+    pushHistory();
   }
 }
 
@@ -311,6 +363,46 @@ function selectNode(id) {
   showProperties(id);
 }
 
+// Snapshot-based history
+function snapshot(){
+  const s = { nodes: [], connections: JSON.parse(JSON.stringify(connections)), nodeCounter };
+  Object.values(nodes).forEach(n=> s.nodes.push({id: n.id, type: n.type, x: Math.round(n.x), y: Math.round(n.y), props: n.props, label: n.label, ports: n.ports }));
+  return s;
+}
+
+function restoreFromSnapshot(s){
+  // clear
+  connections = s.connections || [];
+  Object.keys(nodes).forEach(k=>{ if (nodes[k] && nodes[k].el) nodes[k].el.remove(); });
+  nodes = {};
+  nodeCounter = 0;
+  (s.nodes||[]).forEach(n=>{ addNode(n.type, n.x, n.y, n.id); const created = nodes[n.id]; if (created){ created.props = n.props || {}; created.label = n.label || created.label; created.ports = n.ports || created.ports; const titleEl = created.el.querySelector('.nodetitle'); if (titleEl) titleEl.textContent = created.label; } });
+  redrawWires();
+}
+
+function pushHistory(){
+  try{
+    history.push(snapshot());
+    if (history.length>100) history.shift();
+    future = [];
+  }catch(e){console.warn('history push failed', e);}
+}
+
+function undo(){
+  if (history.length<2) return;
+  const cur = history.pop();
+  future.push(cur);
+  const prev = history[history.length-1];
+  if (prev) restoreFromSnapshot(prev);
+}
+
+function redo(){
+  if (!future.length) return;
+  const s = future.pop();
+  history.push(s);
+  restoreFromSnapshot(s);
+}
+
 function showProperties(id) {
   const propsEl = document.getElementById('props');
   propsEl.innerHTML = '';
@@ -337,16 +429,84 @@ function showProperties(id) {
   };
   propsEl.appendChild(lblInput);
 
+  // Helper: simple validation rules
+  function validatePropSpec(spec, value){
+    // spec may be an object or fallback to text
+    const res = {ok:true, msg:''};
+    const label = spec && spec.label ? spec.label : '';
+    // special-case trigger fields that include '(!name)'
+    if (label.includes('(!name)')){
+      if (!value.startsWith('!')){ res.ok = false; res.msg = "Trigger should start with '!'"; return res; }
+      if (value.length < 2){ res.ok = false; res.msg = "Trigger too short"; return res; }
+    }
+    // number validation
+    if (spec && spec.type === 'number'){
+      const n = Number(value);
+      if (isNaN(n)){ res.ok = false; res.msg = 'Must be a number'; return res; }
+      if (spec.min !== undefined && n < spec.min){ res.ok = false; res.msg = `Min ${spec.min}`; return res; }
+      if (spec.max !== undefined && n > spec.max){ res.ok = false; res.msg = `Max ${spec.max}`; return res; }
+    }
+    // required
+    if (spec && spec.required && (!value || value.toString().trim()==='')){ res.ok = false; res.msg = 'Required'; return res; }
+    return res;
+  }
+  // Validate all node props and enable/disable export
+  function validateAll(){
+    let ok = true;
+    Object.values(nodes).forEach(n=>{
+      const nt = NODE_TYPES[n.type];
+      if (!nt || !nt.props) return;
+      nt.props.forEach(p=>{
+        const v = n.props[p.key] || '';
+        const r = validatePropSpec(p, v);
+        if (!r.ok) ok = false;
+      });
+    });
+    if (exportButton) exportButton.disabled = !ok;
+    return ok;
+  }
+
   const nt = NODE_TYPES[node.type];
   if (nt.props) {
     nt.props.forEach(p => {
+      const row = document.createElement('div'); row.className = 'prop-row';
       const label = document.createElement('div');
       label.textContent = p.label;
-      propsEl.appendChild(label);
-      const input = document.createElement('input');
-      input.value = node.props[p.key] || p.default;
-      input.oninput = () => node.props[p.key] = input.value;
-      propsEl.appendChild(input);
+      row.appendChild(label);
+
+      // determine input type
+      let input;
+      const existing = node.props[p.key] !== undefined ? node.props[p.key] : p.default || '';
+      const ptype = p.type || (typeof p.default === 'number' ? 'number' : 'text');
+      if (ptype === 'textarea'){
+        input = document.createElement('textarea');
+        input.rows = 3;
+        input.value = existing;
+      } else {
+        input = document.createElement('input');
+        input.type = ptype === 'number' ? 'number' : 'text';
+        if (p.placeholder) input.placeholder = p.placeholder;
+        input.value = existing;
+      }
+
+      // inline error message
+      const err = document.createElement('div'); err.className = 'prop-error';
+      row.appendChild(input);
+      row.appendChild(err);
+
+      // on change -> validate and set
+      const applyChange = ()=>{
+        const v = input.value;
+        const vr = validatePropSpec(p, v);
+        if (!vr.ok){ err.textContent = vr.msg; input.style.borderColor = '#ff8080'; }
+        else { err.textContent = ''; input.style.borderColor = ''; node.props[p.key] = v; }
+        validateAll();
+      };
+      input.addEventListener('input', applyChange);
+      // initial apply
+      applyChange();
+
+      propsEl.appendChild(row);
     });
   }
 }
@@ -483,6 +643,17 @@ function clearTempLine() {
 }
 
 function onExport() {
+  // prevent export if invalid
+  const ok = (function(){
+    let all = true;
+    Object.values(nodes).forEach(n=>{
+      const nt = NODE_TYPES[n.type];
+      if (!nt || !nt.props) return;
+      nt.props.forEach(p=>{ const v = n.props[p.key] || ''; if (!validatePropLocal(p,v)) all = false; });
+    });
+    return all;
+  })();
+  if (!ok){ alert('Fix invalid node properties before exporting.'); return; }
   const code = exportCode();
   const blob = new Blob([code], {type: 'text/x-python'});
   const url = URL.createObjectURL(blob);
@@ -491,6 +662,24 @@ function onExport() {
   a.download = 'exported_bot.py';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// local validator reuseable without DOM
+function validatePropLocal(spec, value){
+  if (!spec) return {ok:true};
+  const label = spec && spec.label ? spec.label : '';
+  if (label.includes('(!name)')){
+    if (!value.startsWith('!')) return {ok:false};
+    if (value.length < 2) return {ok:false};
+  }
+  if (spec && spec.type === 'number'){
+    const n = Number(value);
+    if (isNaN(n)) return {ok:false};
+    if (spec.min !== undefined && n < spec.min) return {ok:false};
+    if (spec.max !== undefined && n > spec.max) return {ok:false};
+  }
+  if (spec && spec.required && (!value || value.toString().trim()==='')) return {ok:false};
+  return {ok:true};
 }
 
 function exportCode() {
