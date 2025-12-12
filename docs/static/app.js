@@ -39,29 +39,48 @@ const NODE_TYPES = {
 let nodes = {};
 let connections = [];
 let nodeCounter = 0;
-let canvas = null;
+let canvas = null;      // scrollable viewport
+let stage = null;       // large surface inside canvas where nodes live
 let svg = null;
 let selectedNodeId = null;
 let dragging = null;
 let offset = {x:0, y:0};
 let wireStart = null;
 let tempLine = null;
+let scale = 1;
 
 function init() {
   canvas = document.getElementById('canvas');
+  stage = document.getElementById('stage');
   svg = document.getElementById('wires');
   const toolbar = document.getElementById('toolbar');
   const exportBtn = document.getElementById('export');
 
-  // Create toolbar buttons
+  // Create toolbar buttons (draggable)
   Object.keys(NODE_TYPES).forEach(type => {
     const btn = document.createElement('button');
     btn.textContent = type;
+    btn.draggable = true;
     btn.style.display = 'block';
     btn.style.marginBottom = '6px';
-    btn.onclick = () => addNode(type, 200 + nodeCounter*10, 200 + nodeCounter*10);
+    btn.addEventListener('click', ()=> addNode(type, 300 + nodeCounter*10, 200 + nodeCounter*10));
+    btn.addEventListener('dragstart', (e)=> {
+      e.dataTransfer.setData('text/plain', type);
+      // tiny image so cursor shows dragging
+      const img = document.createElement('canvas'); img.width = 1; img.height = 1;
+      e.dataTransfer.setDragImage(img, 0, 0);
+    });
     toolbar.appendChild(btn);
   });
+
+  // Save / Load buttons
+  const saveBtn = document.createElement('button'); saveBtn.textContent = 'Save';
+  saveBtn.onclick = saveLayout; toolbar.appendChild(saveBtn);
+  const loadBtn = document.createElement('button'); loadBtn.textContent = 'Load';
+  loadBtn.onclick = loadLayout; toolbar.appendChild(loadBtn);
+  const clearBtn = document.createElement('button'); clearBtn.textContent = 'Clear';
+  clearBtn.onclick = ()=>{ nodes={}; connections=[]; nodeCounter=0; stage.querySelectorAll('.node').forEach(n=>n.remove()); redrawWires(); document.getElementById('props').textContent='Select a node'; };
+  toolbar.appendChild(clearBtn);
 
   exportBtn.addEventListener('click', onExport);
 
@@ -69,16 +88,44 @@ function init() {
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
   document.addEventListener('keydown', onKeyDown);
-  // Click canvas to deselect (attach here so element exists when binding)
-  if (canvas) {
-    canvas.addEventListener('click', (e) => {
-      if (selectedNodeId) {
-        nodes[selectedNodeId].el.classList.remove('selected');
-        selectedNodeId = null;
-        document.getElementById('props').textContent = 'Select a node';
-      }
-    });
-  }
+
+  // Drag/drop from toolbar
+  stage.addEventListener('dragover', (e)=> e.preventDefault());
+  stage.addEventListener('drop', (e)=>{
+    e.preventDefault();
+    const type = e.dataTransfer.getData('text/plain');
+    if (!type) return;
+    const pt = getStageCoords(e.clientX, e.clientY);
+    addNode(type, Math.round(pt.x-70), Math.round(pt.y-30));
+  });
+
+  // Canvas interactions
+  canvas.addEventListener('click', (e) => {
+    if (selectedNodeId) {
+      nodes[selectedNodeId].el.classList.remove('selected');
+      selectedNodeId = null;
+      document.getElementById('props').textContent = 'Select a node';
+    }
+  });
+
+  // Zoom with wheel
+  canvas.addEventListener('wheel', (e)=>{
+    if (!e.ctrlKey && Math.abs(e.deltaY) < 1) return; // on some platforms small deltas
+    e.preventDefault();
+    const rect = stage.getBoundingClientRect();
+    const beforeX = (e.clientX - rect.left + canvas.scrollLeft)/scale;
+    const beforeY = (e.clientY - rect.top + canvas.scrollTop)/scale;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.min(2, Math.max(0.5, scale * delta));
+    scale = newScale;
+    stage.style.transform = `scale(${scale})`;
+    // adjust scroll to keep pointer position
+    const afterX = beforeX * scale - (e.clientX - rect.left);
+    const afterY = beforeY * scale - (e.clientY - rect.top);
+    canvas.scrollLeft = afterX;
+    canvas.scrollTop = afterY;
+    redrawWires();
+  }, {passive:false});
 }
 
 function addNode(type, x, y) {
