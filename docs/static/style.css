@@ -1,14 +1,22 @@
 body { margin:0; font-family: Arial, Helvetica, sans-serif; background:#2C2F33; color: #fff; }
 #container { display: flex; height: 100vh; }
-#left { width: 300px; background: #23272A; padding: 10px; box-sizing: border-box; }
-#toolbar { margin-bottom: 8px; }
+#left { width: 280px; background: #23272A; padding: 15px; box-sizing: border-box; overflow-y: auto; border-right: 1px solid #333; }
+#left h2, #left h3 { margin: 0 0 8px 0; color: #fff; font-weight: bold; text-transform: none; }
+#toolbar { margin-bottom: 12px; }
+#toolbar button { display: block; width: 100%; background: #7289DA; color: #fff; border: none; padding: 8px; margin-bottom: 6px; cursor: pointer; border-radius: 3px; font-size: 13px; font-weight: bold; }
+#toolbar button:hover { background: #5a7ec9; }
 #canvas { flex:1; background: #2C2F33; position: relative; overflow: auto; }
-.node { width: 140px; height: 60px; background: #99AAB5; border-radius:4px; position: absolute; cursor: move; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-.header { height:25px; background: #7289DA; border-top-left-radius:4px; border-top-right-radius:4px; padding-left:6px; line-height:25px; color:#fff; font-weight:bold; }
-.port { width:12px; height:12px; background:#fff; border-radius:50%; position:absolute; top:24px; transform: translateY(-50%); }
+.node { width: 140px; height: 60px; background: #99AAB5; border-radius:4px; position: absolute; cursor: move; box-shadow: 0 2px 8px rgba(0,0,0,0.4); border: 2px solid #23272A; transition: transform 0.05s; }
+.node:hover { transform: scale(1.02); }
+.header { height:25px; background: #7289DA; border-top-left-radius:2px; border-top-right-radius:2px; padding-left:6px; line-height:25px; color:#fff; font-weight:bold; font-size: 12px; }
+.port { width:12px; height:12px; background:#fff; border-radius:50%; position:absolute; top:24px; transform: translateY(-50%); cursor: pointer; transition: 0.1s; border: 2px solid #333; }
+.port:hover { background: #7289DA; transform: translateY(-50%) scale(1.15); }
 .port.in { left:-6px; }
 .port.out { right:-6px; }
-#props { margin-top:10px; background: #2C2F33; padding:6px; }
-#export { margin-top: 8px; background: #7289DA; color: #fff; border:none; padding:8px; width:100%; }
-.selected { outline: 3px solid #7289DA; }
+#props { background: #2C2F33; padding: 8px; min-height: 120px; font-size: 13px; color: #dfe6ea; }
+#props > div { margin-bottom: 8px; }
+#props input { width: 100%; padding: 6px; background: #1e2228; border: 1px solid #555; color: #fff; border-radius: 2px; box-sizing: border-box; font-size: 12px; margin-bottom: 8px; }
+#export { margin-top: 12px; background: #7289DA; color: #fff; border:none; padding:10px; width:100%; cursor: pointer; border-radius: 3px; font-weight: bold; }
+#export:hover { background: #5a7ec9; }
+.selected { outline: 3px solid #7289DA !important; }
 svg { position: absolute; left: 0; top:0; pointer-events:none; }

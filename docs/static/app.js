@@ -69,6 +69,16 @@ function init() {
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
   document.addEventListener('keydown', onKeyDown);
+  // Click canvas to deselect (attach here so element exists when binding)
+  if (canvas) {
+    canvas.addEventListener('click', (e) => {
+      if (selectedNodeId) {
+        nodes[selectedNodeId].el.classList.remove('selected');
+        selectedNodeId = null;
+        document.getElementById('props').textContent = 'Select a node';
+      }
+    });
+  }
 }
 
 function addNode(type, x, y) {
@@ -333,15 +343,6 @@ function exportCode() {
 }
 
 window.addEventListener('load', init);
-
-// Click canvas to deselect
-document.getElementById('canvas').addEventListener('click', (e)=>{
-  if (selectedNodeId) {
-    nodes[selectedNodeId].el.classList.remove('selected');
-    selectedNodeId = null;
-    document.getElementById('props').textContent = 'Select a node';
-  }
-});
 
 ```
 
