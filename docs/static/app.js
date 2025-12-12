@@ -128,8 +128,13 @@ function init() {
   }, {passive:false});
 }
 
-function addNode(type, x, y) {
-  const id = 'node_' + nodeCounter++;
+function addNode(type, x, y, idArg) {
+  const id = idArg || ('node_' + nodeCounter++);
+  // if idArg contains a higher numeric, bump counter
+  if (idArg) {
+    const nnum = parseInt(idArg.replace('node_',''));
+    if (!isNaN(nnum)) nodeCounter = Math.max(nodeCounter, nnum+1);
+  }
   const el = document.createElement('div');
   el.className = 'node';
   el.style.left = x + 'px';
@@ -164,7 +169,8 @@ function addNode(type, x, y) {
 
   el.onclick = (e) => onNodeClick(e, id);
 
-  canvas.appendChild(el);
+  // Append to stage (not canvas) so transform/scrolling works
+  stage.appendChild(el);
 
   nodes[id] = {id, type, x, y, props: {}, el};
   // defaults
@@ -178,17 +184,20 @@ function addNode(type, x, y) {
 function onNodeMouseDown(e, id) {
   dragging = id;
   const el = nodes[id].el;
-  offset.x = e.clientX - el.offsetLeft;
-  offset.y = e.clientY - el.offsetTop;
+  // store offset in stage coordinates
+  const pt = getStageCoords(e.clientX, e.clientY);
+  offset.x = pt.x - parseFloat(el.style.left || 0);
+  offset.y = pt.y - parseFloat(el.style.top || 0);
 }
 
 function onMouseMove(e) {
   if (dragging) {
     const el = nodes[dragging].el;
-    const newX = e.clientX - offset.x;
-    const newY = e.clientY - offset.y;
-    el.style.left = newX + 'px';
-    el.style.top = newY + 'px';
+    const pt = getStageCoords(e.clientX, e.clientY);
+    const newX = pt.x - offset.x;
+    const newY = pt.y - offset.y;
+    el.style.left = Math.round(newX) + 'px';
+    el.style.top = Math.round(newY) + 'px';
     nodes[dragging].x = newX;
     nodes[dragging].y = newY;
     redrawWires();
@@ -196,7 +205,8 @@ function onMouseMove(e) {
   if (wireStart) {
     const p = getPortCenter(wireStart, 'out');
     if (!p) return;
-    drawTempLine(p.x, p.y, e.clientX, e.clientY);
+    const pt = getStageCoords(e.clientX, e.clientY);
+    drawTempLine(p.x, p.y, pt.x, pt.y);
   }
 }
 
@@ -291,12 +301,12 @@ function redrawWires() {
     if (!s || !e) return;
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
     const dx = Math.abs(e.x - s.x);
-    const cx1 = s.x + Math.min(100, dx/2);
-    const cx2 = e.x - Math.min(100, dx/2);
+    const cx1 = s.x + Math.min(150, dx/2);
+    const cx2 = e.x - Math.min(150, dx/2);
     const d = `M ${s.x} ${s.y} C ${cx1} ${s.y}, ${cx2} ${e.y}, ${e.x} ${e.y}`;
     path.setAttribute('d', d);
     path.setAttribute('stroke', '#ffffff');
-    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-width', Math.max(1, 2/scale));
     path.setAttribute('fill', 'none');
     svg.appendChild(path);
   });
@@ -307,25 +317,70 @@ function getPortCenter(nodeId, dir) {
   if (!n) return null;
   const el = n.el;
   const rect = el.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
+  // rect coordinates are in viewport space; convert to stage coordinates (unscaled)
+  const x = (rect.left - stageRect.left + canvas.scrollLeft)/scale;
+  const y = (rect.top - stageRect.top + canvas.scrollTop)/scale;
   if (dir === 'out') {
-    return {x: rect.right - 6, y: rect.top + 24};
+    return {x: x + rect.width - 6, y: y + 24};
   }
-  return {x: rect.left + 6, y: rect.top + 24};
+  return {x: x + 6, y: y + 24};
+}
+
+function getStageCoords(clientX, clientY) {
+  const rect = stage.getBoundingClientRect();
+  const x = (clientX - rect.left + canvas.scrollLeft)/scale;
+  const y = (clientY - rect.top + canvas.scrollTop)/scale;
+  return {x,y};
 }
 
 function drawTempLine(x1, y1, x2, y2) {
   if (!tempLine) {
     tempLine = document.createElementNS('http://www.w3.org/2000/svg','path');
     tempLine.setAttribute('stroke', '#7289DA');
-    tempLine.setAttribute('stroke-width', '2');
+    tempLine.setAttribute('stroke-width', Math.max(1, 2/scale));
     tempLine.setAttribute('fill', 'none');
+    tempLine.setAttribute('stroke-dasharray', '6 4');
     svg.appendChild(tempLine);
   }
   const dx = Math.abs(x2 - x1);
-  const cx1 = x1 + Math.min(100, dx/2);
-  const cx2 = x2 - Math.min(100, dx/2);
+  const cx1 = x1 + Math.min(150, dx/2);
+  const cx2 = x2 - Math.min(150, dx/2);
   const d = `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`;
   tempLine.setAttribute('d', d);
+}
+
+// Save current layout to localStorage
+function saveLayout() {
+  const payload = { nodes: [], connections };
+  Object.values(nodes).forEach(n => {
+    payload.nodes.push({ id: n.id, type: n.type, x: Math.round(n.x), y: Math.round(n.y), props: n.props });
+  });
+  localStorage.setItem('botbuilder_layout', JSON.stringify(payload));
+  alert('Layout saved to localStorage');
+}
+
+function loadLayout() {
+  const raw = localStorage.getItem('botbuilder_layout');
+  if (!raw) { alert('No saved layout found'); return; }
+  try {
+    const payload = JSON.parse(raw);
+    // clear
+    connections = payload.connections || [];
+    Object.keys(nodes).forEach(k=>{ if (nodes[k] && nodes[k].el) nodes[k].el.remove(); });
+    nodes = {};
+    nodeCounter = 0;
+    // restore nodes
+    (payload.nodes||[]).forEach(n => {
+      addNode(n.type, n.x, n.y, n.id);
+      const created = nodes[n.id];
+      if (created) created.props = n.props || {};
+    });
+    redrawWires();
+    alert('Layout loaded');
+  } catch(err) {
+    alert('Failed to load layout: '+err);
+  }
 }
 
 function clearTempLine() {
