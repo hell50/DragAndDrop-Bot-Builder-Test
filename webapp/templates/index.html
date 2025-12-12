@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Bot Builder</title>
+  <style>
+    body { margin:0; font-family: Arial, Helvetica, sans-serif; background:#2C2F33; color: #fff; }
+    #container { display: flex; height: 100vh; }
+    #left { width: 300px; background: #23272A; padding: 10px; box-sizing: border-box; }
+    #toolbar { margin-bottom: 8px; }
+    #canvas { flex:1; background: #2C2F33; position: relative; overflow: auto; }
+    .node { width: 140px; height: 60px; background: #99AAB5; border-radius:4px; position: absolute; cursor: move; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+    .header { height:25px; background: #7289DA; border-top-left-radius:4px; border-top-right-radius:4px; padding-left:6px; line-height:25px; color:#fff; font-weight:bold; }
+    .port { width:12px; height:12px; background:#fff; border-radius:50%; position:absolute; top:24px; transform: translateY(-50%); }
+    .port.in { left:-6px; }
+    .port.out { right:-6px; }
+    #props { margin-top:10px; background: #2C2F33; padding:6px; }
+    #export { margin-top: 8px; background: #7289DA; color: #fff; border:none; padding:8px; width:100%; }
+    .selected { outline: 3px solid #7289DA; }
+    svg { position: absolute; left: 0; top:0; pointer-events:none; }
+  </style>
+</head>
+<body>
+<div id="container">
+  <div id="left">
+    <div id="toolbar"></div>
+    <div id="props">Select a node</div>
+    <button id="export">Export Bot.py</button>
+  </div>
+  <div id="canvas">
+    <svg id="wires"></svg>
+  </div>
+</div>
+<script>
+const NODE_TYPES = JSON.parse('{{ node_types|safe }}');
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>
