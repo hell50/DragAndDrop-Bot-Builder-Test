@@ -20,3 +20,10 @@ body { margin:0; font-family: Arial, Helvetica, sans-serif; background:#2C2F33; 
 #export:hover { background: #5a7ec9; }
 .selected { outline: 3px solid #7289DA !important; }
 svg { position: absolute; left: 0; top:0; pointer-events:none; }
+
+/* Stage is a large surface inside the scrollable canvas. Nodes and SVG live here. */
+#stage { position: relative; width: 2000px; height: 2000px; transform-origin: 0 0; background-image: linear-gradient(#2c2f33 0, #2c2f33 40px), linear-gradient(90deg,#2c2f33 0,#2c2f33 40px); }
+#stage::before { content: ""; position: absolute; left:0; top:0; right:0; bottom:0; background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px); background-size: 20px 20px, 20px 20px; pointer-events: none; }
+
+/* Make toolbar buttons draggable hint */
+#toolbar button { -webkit-user-drag: element; }
